@@ -1,11 +1,11 @@
-# Script for populating the database. You can run it as:
-#
-#     mix run priv/repo/seeds.exs
-#
-# Inside the script, you can read and write to any of your
-# repositories directly:
-#
-#     SimpleErp.Repo.insert!(%SimpleErp.SomeSchema{})
-#
-# We recommend using the bang functions (`insert!`, `update!`
-# and so on) as they will fail if something goes wrong.
+alias SimpleErp.Repo
+alias SimpleErp.Catalog.Product
+
+Repo.delete_all(Product)
+
+Repo.insert!(%Product{name: "Keyboard", stock: 10})
+Repo.insert!(%Product{name: "Mouse", stock: 5})
+Repo.insert!(%Product{name: "Monitor", stock: 2})
+Repo.insert!(%Product{name: "Pad", stock: 200})
+
+IO.puts("The seeds file was executed successfully!")

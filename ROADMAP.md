@@ -1,51 +1,121 @@
-Gemini said
-Setelah menguasai LiveView Real-time, Ecto, dan Streams, kamu sudah melompati rintangan terbesar. Namun, untuk membuat aplikasi Elixir yang bulletproof (tahan banting) dan berskala besar, berikut adalah konsep-konsep MVP (Most Valuable Programming) yang wajib kamu pelajari selanjutnya:
+# 🚀 Elixir OTP Mastery: The Shopping Cart Journey
 
-1. Elixir OTP (Open Telecom Platform) - Pondasi Utama
-Ini adalah "jiwa" dari Elixir. Tanpa memahami ini, kamu hanya menggunakan Elixir sebagai bahasa biasa, bukan platform yang sangat kuat.
+Dokumentasi ini adalah panduan lengkap membangun sistem stateful yang tangguh (resilient) menggunakan Elixir OTP, mulai dari konsep dasar hingga sinkronisasi database PostgreSQL.
 
-GenServer: Memahami cara membuat proses yang memiliki state sendiri dan berjalan di background (misal: antrean pesanan, proses kalkulasi berat).
+---
 
-Supervisor: Konsep "Let it Crash". Bagaimana satu proses mengawasi proses lain dan menghidupkannya kembali otomatis jika error.
+## 📚 1. Definisi & Konsep Dasar
+**OTP (Open Telecom Platform)** adalah kumpulan library Erlang yang memungkinkan kita membangun sistem yang *fault-tolerant* dan berjalan secara *concurrent*.
 
-Task & Task.Supervisor: Menjalankan proses sekali pakai secara asinkron tanpa membebani request utama.
+* **Process**: Unit eksekusi terkecil (bukan Thread OS). Sangat ringan.
+* **GenServer**: "Generic Server" — Abstraksi untuk membuat proses yang memiliki state (ingatan) dan bisa berkomunikasi dua arah.
+* **Supervisor**: Proses "Manajer" yang tugasnya hanya memantau proses anak. Jika anak mati, ia akan menghidupkannya kembali.
 
-2. Ecto Mastery (Lanjutan)
-Bukan sekadar Insert dan Select, tapi bagaimana mengelola data yang kompleks.
+### 🎭 Analogi Dunia Nyata
+Bayangkan **GenServer** adalah seorang **Kasir**. 
+1. Ia punya ingatan (State) tentang apa saja yang dimasukkan ke keranjang.
+2. Kamu bisa memberitahunya "Tambah Kopi" (**Cast** - tanpa menunggu balasan).
+3. Kamu bisa bertanya "Berapa totalnya?" (**Call** - menunggu balasan).
+4. Jika Kasir pingsan (**Crash**), **Supervisor** (Manajer Toko) akan segera menggantinya dengan kasir baru agar toko tetap buka.
 
-Changeset Validations: Membuat aturan input yang ketat (misal: stok tidak boleh negatif, format email, dsb).
+---
 
-Associations (Has Many / Belongs To): Menghubungkan antar tabel (misal: Produk belongs to Kategori).
+## 🛠️ 2. Setup & Arsitektur
+Sistem ini menggunakan tabel `cart_items` untuk menyimpan data secara permanen.
 
-Multi (Ecto.Multi): Menjalankan beberapa operasi database sekaligus (misal: simpan Order + Kurangi Stok). Jika satu gagal, semua batal (Atomic Transaction).
+**Struktur Tabel:**
+* `product_id` (Unique Index)
+* `qty` (Integer)
 
-3. LiveView Componentization
-Agar kode kamu tidak menjadi "file raksasa" ribuan baris.
+**Setup Database:**
+Pastikan kamu telah menjalankan migrasi dengan **Unique Index** pada `product_id` untuk mendukung fitur **Atomic Upsert**.
 
-Function Components: Membungkus UI kecil (button, input, badge) agar bisa dipakai berulang kali (<.my_component />).
+---
 
-LiveComponent: Memisahkan bagian dashboard yang memiliki logic sendiri (misal: modul Chat atau modul Grafik) ke file terpisah.
+## 💻 3. Implementasi: `InventoryCache` (Shopping Cart)
 
-JS Hooks: Cara memanggil JavaScript hanya saat dibutuhkan (misal: untuk Chart.js, Google Maps, atau integrasi alat scan barcode).
+```elixir
+defmodule SimpleErp.InventoryCache do
+  use GenServer
+  require Logger
+  alias SimpleErp.Repo
 
-4. Phoenix Authentication (Auth)
-mix phx.gen.auth: Memahami bagaimana Phoenix membuat sistem Login, Register, dan Session secara otomatis yang sangat aman.
+  # --- Client API ---
+  def start_link(_opts), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  def add_to_cart(p_id, qty), do: GenServer.cast(__MODULE__, {:add, p_id, qty})
+  def get_all_stock(), do: GenServer.call(__MODULE__, :get_all)
 
-LiveView Navigation: Membedakan patch (update URL tanpa mount ulang) dan Maps (pindah halaman sepenuhnya).
+  # --- Server Callbacks ---
+  @impl true
+  def init(_state) do
+    Logger.info("📦 Shopping Cart Born!")
+    schedule_save()
+    {:ok, %{}} # State awal berupa Map kosong
+  end
 
-5. Pattern Matching & Guard Clauses (Detail Kecil yang Vital)
-Ini adalah "gaya" Elixir yang membuat kode sangat bersih.
+  @impl true
+  def handle_cast({:add, id, qty}, state) do
+    new_state = Map.update(state, id, qty, &(&1 + qty))
+    {:noreply, new_state}
+  end
 
-Pattern Matching: Mengambil data langsung di argumen fungsi (seperti yang kamu lakukan di handle_event("name", params, socket)).
+  @impl true
+  def handle_call(:get_all, _from, state), do: {:reply, state, state}
 
-Guard Clauses: Menambahkan syarat di fungsi, contoh: def update_stok(stok) when stok > 0 do ....
+  @impl true
+  def handle_info(:autosave, state) do
+    if map_size(state) > 0 do
+      Logger.debug("💾 [AUTOSAVE] Syncing to DB: #{inspect(state)}")
+      persist_to_db(state)
+    end
+    schedule_save()
+    {:noreply, %{}} # Flush RAM setelah pindah ke DB
+  end
 
-6. PubSub & Presence (Skala Lanjut)
-Phoenix Presence: Mengetahui siapa saja yang sedang online secara real-time (sangat berguna untuk fitur "User sedang melihat produk ini" atau "Siapa yang sedang jaga kasir").
+  @impl true
+  def terminate(reason, state) do
+    Logger.error("💀 Emergency Save! Reason: #{inspect(reason)}")
+    persist_to_db(state)
+    :ok
+  end
 
-Saran Langkah Selanjutnya:
-Saya sarankan kita mulai dari Ecto Multi atau Changeset Validations, karena di ERP, validasi data adalah harga mati agar laporan keuangan/stok tidak berantakan.
+  defp persist_to_db(state) do
+    Enum.each(state, fn {p_id, quantity} ->
+      now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+      data = %{product_id: p_id, qty: quantity, inserted_at: now, updated_at: now}
 
-Apakah kamu ingin saya ajarkan cara mencegah stok menjadi minus menggunakan Ecto Changeset sekarang?
+      Repo.insert_all("cart_items", [data],
+        on_conflict: [inc: [qty: quantity]],
+        conflict_target: :product_id
+      )
+    end)
+  end
 
-Jika kamu lupa atau tidak tahu dokumentasi terbaru untuk mengajarkan saya tolong kamu meminta dokumentasi terbaru dari saya secara spesifik.
+  defp schedule_save(), do: Process.send_after(self(), :autosave, 10000)
+end
+```
+## 🔍 4. Debugging & Inspeksi
+Gunakan perintah ini di **IEx** untuk mengintip isi sistem secara mendalam:
+
+* `:sys.get_state(SimpleErp.InventoryCache)` : Melihat isi keranjang yang saat ini ada di RAM.
+* `:sys.trace(SimpleErp.InventoryCache, true)` : Mengaktifkan trace untuk melihat lalu lintas pesan secara live.
+* `Process.whereis(SimpleErp.InventoryCache)` : Mendapatkan PID proses yang sedang jalan.
+
+---
+
+## 🧪 5. Testing (ExUnit)
+Poin-poin penting yang harus dites:
+
+* **Logic Test**: Memastikan `Map.update` bekerja dengan benar dalam mengelola state.
+* **Persistence Test**: Mengirim sinyal `:autosave` manual dan mengecek data di tabel `cart_items` menggunakan `Repo.one`.
+* **Race Condition**: Memastikan `on_conflict` (Upsert) tidak membuat data duplikat di database.
+
+---
+
+## ⚠️ 6. Bagian Paling Penting (The Golden Rules)
+1. **Immutability**: State tidak pernah "berubah", kita selalu menghasilkan State baru di akhir fungsi `handle_*`.
+2. **Write-Behind Pattern**: Kita menulis ke RAM dulu (cepat) baru ke DB (lambat) secara berkala. Ini meningkatkan performa aplikasi secara drastis.
+3. **Don't Overuse**: Gunakan GenServer hanya jika kamu butuh mengelola State yang berumur panjang (seperti Keranjang atau Sesi Game). Untuk query DB biasa, gunakan Ecto langsung.
+4. **Inspect Everything**: Selalu gunakan `#{inspect(data)}` saat logging data kompleks (List/Map/Struct) untuk menghindari `ArgumentError`.
+
+---

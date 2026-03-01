@@ -6,6 +6,12 @@ defmodule SimpleErpWeb.DashboardLive do
       Phoenix.PubSub.subscribe(SimpleErp.PubSub, "inventory_updates")
     end
 
+    # Catat hit ke OTP GenServer
+    SimpleErp.TrafficMonitor.add_hit()
+
+    # Ambil total hit saat ini
+    total_hits = SimpleErp.TrafficMonitor.get_stats()
+
     kategori = SimpleErp.Kategori.list_categories()
     products = SimpleErp.Catalog.list_products()
 
@@ -13,7 +19,8 @@ defmodule SimpleErpWeb.DashboardLive do
       socket
       |> stream(:kategori, kategori)
       |> stream(:products, products)
-    {:ok, socket}
+
+    {:ok, assign(socket, :total_hits, total_hits)}
   end
 
   def render(assigns) do
@@ -30,7 +37,7 @@ defmodule SimpleErpWeb.DashboardLive do
           <span>{kategori.name}</span>
           <%!-- Form sederhana untuk update nama secara langsung --%>
           <form phx-submit="update_category_name" class="flex flex-1 gap-2">
-            <input type="hidden" name="id" value={kategori.id} />
+            <input type="hidden" name="category_id" value={kategori.id} />
             <input
               type="text"
               name="name"
@@ -81,13 +88,28 @@ defmodule SimpleErpWeb.DashboardLive do
     {:noreply, socket}
   end
 
-  # Perbaikan di sini: Samakan atom (:stock_update) dan variabel (id)
-  def handle_info({:stock_update, product}, socket) do
-    {:noreply, stream_insert(socket, :products, product)}
+  def handle_event("delete_category", %{"id" => id}, socket) do
+    kategori = SimpleErp.Kategori.get_category!(id)
+
+    case SimpleErp.Kategori.delete_category(kategori) do
+      {:ok, _} ->
+        # 3. Broadcast agar user lain juga melihat perubahannya
+        Phoenix.PubSub.broadcast(
+          SimpleErp.PubSub,
+          "inventory_updates",
+          {:category_deleted, kategori}
+        )
+
+        # 4. Beri notifikasi ke user (opsional)
+        {:noreply, put_flash(socket, :info, "Kategori dihapus!")}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Gagal menghapus kategori.")}
+    end
   end
 
   # Handler untuk memproses perubahan nama kategori
-  def handle_event("update_category_name", %{"id" => id, "name" => name}, socket) do
+  def handle_event("update_category_name", %{"category_id" => id, "name" => name}, socket) do
     # 1. Ambil data kategori dari DB
     kategori = SimpleErp.Kategori.get_category!(id)
 
@@ -95,7 +117,11 @@ defmodule SimpleErpWeb.DashboardLive do
     case SimpleErp.Kategori.update_category(kategori, %{name: name}) do
       {:ok, updated_kategori} ->
         # 3. Broadcast agar user lain juga melihat perubahannya
-        Phoenix.PubSub.broadcast(SimpleErp.PubSub, "inventory_updates", {:category_updated, updated_kategori})
+        Phoenix.PubSub.broadcast(
+          SimpleErp.PubSub,
+          "inventory_updates",
+          {:category_updated, updated_kategori}
+        )
 
         # 4. Beri notifikasi ke user (opsional)
         {:noreply, put_flash(socket, :info, "Kategori diperbarui!")}
@@ -105,25 +131,15 @@ defmodule SimpleErpWeb.DashboardLive do
     end
   end
 
+  # Perbaikan di sini: Samakan atom (:stock_update) dan variabel (id)
+  def handle_info({:stock_update, product}, socket) do
+    {:noreply, stream_insert(socket, :products, product)}
+  end
+
   # Handler untuk menangkap broadcast real-time
   def handle_info({:category_updated, kategori}, socket) do
     # stream_insert akan otomatis mengupdate elemen dengan ID yang sama di browser
     {:noreply, stream_insert(socket, :kategori, kategori)}
-  end
-
-  def handle_event("delete_category", %{"id" => id}, socket) do
-    kategori = SimpleErp.Kategori.get_category!(id)
-
-    case SimpleErp.Kategori.delete_category(kategori) do
-      {:ok, _} ->
-        # 3. Broadcast agar user lain juga melihat perubahannya
-        Phoenix.PubSub.broadcast(SimpleErp.PubSub, "inventory_updates", {:category_deleted, kategori})
-        # 4. Beri notifikasi ke user (opsional)
-        {:noreply, put_flash(socket, :info, "Kategori dihapus!")}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Gagal menghapus kategori.")}
-    end
   end
 
   def handle_info({:category_deleted, kategori}, socket) do

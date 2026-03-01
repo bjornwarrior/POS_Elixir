@@ -12,6 +12,7 @@ defmodule SimpleErp.Application do
       SimpleErp.Repo,
       {DNSCluster, query: Application.get_env(:simple_erp, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SimpleErp.PubSub},
+      SimpleErp.TrafficMonitor,
       # Start a worker by calling: SimpleErp.Worker.start_link(arg)
       # {SimpleErp.Worker, arg},
       # Start to serve requests, typically the last entry

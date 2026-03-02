@@ -26,10 +26,68 @@ import {hooks as colocatedHooks} from "phoenix-colocated/simple_erp"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+
+let Hooks = {}
+
+Hooks.StockChart = {
+  mounted() {
+    const ctx = this.el.getContext('2d');
+    this.chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: JSON.parse(this.el.dataset.labels),
+        datasets: [{
+          label: 'Stok Barang',
+          data: JSON.parse(this.el.dataset.values),
+          backgroundColor: '#6366f1'
+        }]
+      }
+    });
+
+    // Mendengarkan update dari LiveView
+    this.handleEvent("update-chart", ({labels, values}) => {
+      this.chart.data.labels = labels;
+      this.chart.data.datasets[0].data = values;
+      this.chart.update();
+    })
+  }
+}
+
+// assets/js/app.js
+
+Hooks.DbCartChart = {
+  mounted() {
+    const ctx = this.el.getContext('2d');
+    this.chart = new Chart(ctx, {
+      type: 'polarArea', // Kita pakai tipe Polar Area agar lebih variatif!
+      data: {
+        labels: JSON.parse(this.el.dataset.labels),
+        datasets: [{
+          label: 'Total Nilai (Rp)',
+          data: JSON.parse(this.el.dataset.values),
+          backgroundColor: [
+            'rgba(99, 102, 241, 0.5)', 
+            'rgba(245, 158, 11, 0.5)', 
+            'rgba(16, 185, 129, 0.5)', 
+            'rgba(239, 68, 68, 0.5)'
+          ],
+          borderColor: '#6366f1'
+        }]
+      }
+    });
+
+    this.handleEvent("update-db-chart", ({labels, values}) => {
+      this.chart.data.labels = labels;
+      this.chart.data.datasets[0].data = values;
+      this.chart.update();
+    })
+  }
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: Hooks,
 })
 
 // Show progress bar on live navigation and form submits

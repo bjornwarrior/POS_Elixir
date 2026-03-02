@@ -20,6 +20,8 @@ defmodule SimpleErpWeb.Router do
     get "/", PageController, :home
 
     live "/dashboard", DashboardLive
+    live "/supervisor-demo", SupervisorDemoLive
+    live "/cart", CartLive
   end
 
   # Other scopes may use custom stacks.

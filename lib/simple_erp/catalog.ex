@@ -4,9 +4,10 @@ defmodule SimpleErp.Catalog do
   """
 
   import Ecto.Query, warn: false
+  alias Ecto.Multi
   alias SimpleErp.Repo
 
-  alias SimpleErp.Catalog.Product
+  alias SimpleErp.Catalog.{Product, Sale}
 
   @doc """
   Returns the list of products.
@@ -111,5 +112,31 @@ defmodule SimpleErp.Catalog do
     get_product!(id)
   end
 
-  
+  def jual_produk(product_id, qty) do
+    # 1. Mulai bungkus operasi ke dalam Multi
+    Multi.new()
+    # LANGKAH A: Ambil data produk (untuk memastikan ada)
+    |> Multi.run(:produk, fn repo, _changes_so_far ->
+      case repo.get(Product, product_id) do
+        nil -> {:error, "Produk tidak ditemukan!"}
+        p -> {:ok, p}
+      end
+    end)
+    # LANGKAH B: Update stok produk
+    |> Multi.update(:update_stok, fn %{produk: p} ->
+      new_stock = p.stock - qty
+      Product.changeset(p, %{stock: new_stock})
+    end)
+    # LANGKAH C: Catat Log Penjualan (Simulasi)
+    |> Multi.insert(:catat_sale, fn %{produk: p} ->
+      total = Decimal.mult(p.price, Decimal.new(qty))
+      Sale.changeset(%Sale{}, %{
+        product_id: p.id,
+        qty: qty,
+        total_price: total
+      })
+    end)
+    # 2. EKSEKUSI SEMUANYA SEKALIGUS
+    |> Repo.transaction()
+  end
 end

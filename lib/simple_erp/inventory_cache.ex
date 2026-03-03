@@ -31,10 +31,6 @@ defmodule SimpleErp.InventoryCache do
 
   @impl true
   def init(_state) do
-    Logger.info("📦 InventoryCache Berhasil Dilahirkan!")
-    Logger.debug("Keranjang Kamu Saat ini: #{inspect(Shopping.list_cart_items())}")
-
-    # Gae Timmer
     schedule_save()
     {:ok, %{}}
   end
@@ -63,6 +59,7 @@ defmodule SimpleErp.InventoryCache do
     {:noreply, new_state}
   end
 
+  @impl true
   def handle_cast({:reduce, product_name, amount}, state) do
     # Memperbarui state
     new_state2 =
@@ -83,10 +80,9 @@ defmodule SimpleErp.InventoryCache do
   def handle_info(:autosave, state) do
     # 2. Simulasi Logika Auto-Save (Handle Info)
     if map_size(state) > 0 do
-      Logger.debug("💾 [AUTOSAVE] Menyimpan data ke 'Database'")
       persist_to_db(state)
     else
-      Logger.debug("💾 [AUTOSAVE] Cache kosong, tidak ada yang disimpan.")
+
     end
 
     # Jadwalkan ulang setiap 10 detik
@@ -99,7 +95,6 @@ defmodule SimpleErp.InventoryCache do
   def terminate(reason, state) do
     # 3. Last Wish (Terminate)
     Logger.error("💀 InventoryCache Wafat! Alasan: #{inspect(reason)}")
-    Logger.error("💀 Data terakhir di RAM: #{inspect(state)}")
 
     if map_size(state) > 0 do
       Logger.warn("💾 [LAST WISH] Menyimpan data secara sinkron sebelum proses benar-benar musnah...")
